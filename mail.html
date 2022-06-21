@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Gmail API Quickstart</title>
+    <meta charset="utf-8" />
+</head>
+
+<body>
+    <p>Gmail API Quickstart</p>
+    python -m http.server 8000
+    <div id="timers"></div>
+
+    <!--Add buttons to initiate auth sequence and sign out-->
+    <button id="authorize_button" onclick="handleAuthClick()">Authorize</button>
+    <button onclick="getProxyIp()">ip</button>
+    <button onclick="list()">list</button>
+    <button onclick="postCode('test320@hm2017.uu.me')">code</button>
+    <button onclick="bind()">bind</button>
+    <button onclick="doing()">doing</button>
+    <button id="signout_button" onclick="handleSignoutClick()">Sign Out</button>
+
+    <pre id="content" style="white-space: pre-wrap;"></pre>
+    <div id="email">
+        success
+    </div>
+    <div id="emailerr">
+        error
+    </div>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://requirejs.org/docs/release/2.3.5/minified/require.js"></script>
+
+    <script type="text/javascript">
+        /* exported gapiLoaded */
+        /* exported gisLoaded */
+        /* exported handleAuthClick */
+        /* exported handleSignoutClick */
+
+        // TODO(developer): Set to client ID and API key from the Developer Console
+        const CLIENT_ID = '469537849783-uf105e1s5v720lcle11llbbdana4hvdh.apps.googleusercontent.com';
+        const API_KEY = 'AIzaSyAA06guqpSoCfyhC_flU1X1KzD44KsIM3s';
+
+        // Discovery doc URL for APIs used by the quickstart
+        const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest';
+
+        // Authorization scopes required by the API; multiple scopes can be
+        // included, separated by spaces.
+        const SCOPES = 'https://www.googleapis.com/auth/gmail.readonly';
+
+        let tokenClient;
+        let gapiInited = false;
+        let gisInited = false;
+
+        document.getElementById('authorize_button').style.visibility = 'hidden';
+        document.getElementById('signout_button').style.visibility = 'hidden';
+
+        /**
+         * Callback after api.js is loaded.
+         */
+        function gapiLoaded() {
+            gapi.load('client', intializeGapiClient);
+        }
+
+        /**
+         * Callback after the API client is loaded. Loads the
+         * discovery doc to initialize the API.
+         */
+        async function intializeGapiClient() {
+            await gapi.client.init({
+                apiKey: API_KEY,
+                discoveryDocs: [DISCOVERY_DOC],
+            });
+            gapiInited = true;
+            maybeEnableButtons();
+        }
+
+        /**
+         * Callback after Google Identity Services are loaded.
+         */
+        function gisLoaded() {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: SCOPES,
+                callback: '', // defined later
+            });
+            gisInited = true;
+            maybeEnableButtons();
+        }
+
+        /**
+         * Enables user interaction after all libraries are loaded.
+         */
+        function maybeEnableButtons() {
+            if (gapiInited && gisInited) {
+                document.getElementById('authorize_button').style.visibility = 'visible';
+            }
+        }
+
+        /**
+         *  Sign in the user upon button click.
+         */
+        function handleAuthClick() {
+            tokenClient.callback = async (resp) => {
+                if (resp.error !== undefined) {
+                    throw (resp);
+                }
+                document.getElementById('signout_button').style.visibility = 'visible';
+                document.getElementById('authorize_button').innerText = 'Refresh';
+                await list('first')
+            };
+
+            if (gapi.client.getToken() === null) {
+                // Prompt the user to select a Google Account and ask for consent to share their data
+                // when establishing a new session.
+                tokenClient.requestAccessToken({ prompt: 'consent' });
+            } else {
+                // Skip display of account chooser and consent dialog for an existing session.
+                tokenClient.requestAccessToken({ prompt: '' });
+            }
+        }
+
+        /**
+         *  Sign out the user upon button click.
+         */
+        function handleSignoutClick() {
+            const token = gapi.client.getToken();
+            if (token !== null) {
+                google.accounts.oauth2.revoke(token.access_token);
+                gapi.client.setToken('');
+                document.getElementById('content').innerText = '';
+                document.getElementById('authorize_button').innerText = 'Authorize';
+                document.getElementById('signout_button').style.visibility = 'hidden';
+            }
+        }
+        let id = ''
+        let setTimes = 0
+        let num = 480
+
+        async function list(email) {
+            let response;
+            let code;
+            let timer
+            let message
+            try {
+                const { result: { messages } } = await gapi.client.gmail.users.messages.list({
+                    'userId': 'me',
+                    "maxResults": 5
+                });
+                console.log({ messages });
+                message = messages
+                if (setTimes === 20) {
+                    setTimes = 0
+                    console.log('跳过', email);
+                    doing()
+                } else if (id === messages[0].id) {
+                    setTimes++
+                    console.log('轮训中----', setTimes);
+                    timer = setTimeout(() => list(email), 5000)
+                } else {
+                    if (email !== 'first') {
+                        clearTimeout(timer)
+                        response = await gapi.client.gmail.users.messages.get({
+                            'userId': 'me',
+                            "id": message[0].id,
+                            'format': 'full'
+                        });
+                        code = response.result.snippet.match(/\d+/g)[0]
+                        console.log({ code });
+                        await bind(email, code)
+                        setTimes = 0
+                    }
+                    id = message[0].id
+                }
+
+            } catch (err) {
+                document.getElementById('content').innerText = err.message;
+                return;
+            }
+            document.getElementById('content').innerText = code || 'first'
+        }
+        const postCode = async (email, ip) => {
+            let script = document.createElement('script')
+            script.src = `http://127.0.0.1:2017?email=${email}`
+            document.body.appendChild(script)
+            script.onload = async function () {
+                await list(email)
+            };
+        };
+        const bind = async (email, code) => {
+            try {
+                const { data }
+                    = await axios(
+                        {
+                            url: `https://api.step.app/v1/auth/token?email=${email}&code=${code}`,
+                            method: 'get',
+                            headers: {
+                                'Host': 'api.step.app',
+                                'Origin': 'https://app.step.app',
+                                'Referer': 'https://app.step.app/',
+                            }
+                        }
+                    );
+                console.log(data.access.token);
+                const msg = await axios({
+                    url: `https://api.step.app/v1/user/me`,
+                    method: 'patch',
+                    data: { referrer: "JAPRW5GC" },
+                    headers: {
+                        'Host': 'api.step.app',
+                        'Origin': 'https://app.step.app',
+                        'Referer': 'https://app.step.app/',
+                        'Authorization': `Bearer ${data.access.token}`
+                    }
+                })
+                console.log('绑定成功', data);
+                var para = document.createElement("div")
+                para.innerText = email
+                document.getElementById('email').appendChild(para)
+                const timers = Number(JSON.parse(localStorage.getItem('timers'))) + 1
+                document.getElementById('timers').innerText = timers
+                localStorage.setItem('timers', timers)
+                doing()
+            } catch (err) {
+                console.log('错误', err);
+                var para = document.createElement("div")
+                para.innerText = email
+                document.getElementById('emailerr').appendChild(para)
+                doing()
+            }
+        };
+        async function getProxyIp() {
+            const { data } = await axios.get(`http://demo.spiderpy.cn/get/?type=https`);
+            console.log('以获取IP', data.proxy);
+            return data.proxy;
+        }
+        const doing = async () => {
+            num++
+            const email = `test${num}@hm2017.uu.me`
+            console.log('邮箱', email);
+            // const ip = await getProxyIp()
+            await postCode(email)
+
+        }
+    </script>
+    <script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
+    <script async defer src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
+</body>
+
+</html>
+<!-- [END gmail_quickstart] -->
